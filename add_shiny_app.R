@@ -1,5 +1,4 @@
-# Install once (not on every run):
-# install.packages(c("shiny", "bslib", "readxl", "dplyr", "ggplot2", "plotly"))
+# install.packages(c("shiny", "bslib", "readxl", "dplyr", "ggplot2", "plotly", "scales"))
 
 library(shiny)
 library(bslib)
@@ -51,16 +50,37 @@ group_variables <- c(
   "Clinical Dementia Rating" = "CDR"
 )
 
+# Numeric variable that can colour points with a gradient
+numeric_colour_vars <- c("Cognitive score (MMSE)" = "MMSE")
+all_colour_vars <- c(group_variables, numeric_colour_vars)
+
 group_notes <- list(
   "M/F" = "Sex: F = female, M = male.",
   Educ  = "Education level is coded 1 (lowest) to 5 (highest). It is treated as separate categories here, not as a continuous scale.",
   SES   = "Socioeconomic status is coded 1 (highest) to 5 (lowest). It is treated as separate categories here, not as a continuous scale.",
-  CDR   = "Clinical Dementia Rating: 0 = no dementia, 0.5 = very mild, 1 = mild, 2 = moderate. Participants without a rating appear as 'Not recorded'."
+  CDR   = "Clinical Dementia Rating: 0 = no dementia, 0.5 = very mild, 1 = mild, 2 = moderate. Participants without a rating appear as 'Not recorded'.",
+  MMSE  = "MMSE is a continuous cognitive score, so a colour gradient is used instead of separate categories."
 )
 
 # ==================================================
 # 2. HELPER FUNCTIONS
 # ==================================================
+
+order_levels <- function(x) {
+  u <- unique(x)
+  real <- setdiff(u, "Not recorded")
+  num <- suppressWarnings(as.numeric(real))
+  real <- if (!anyNA(num)) real[order(num)] else sort(real)
+  c(real, intersect("Not recorded", u))
+}
+
+# Distinct categorical colours; grey for missing
+make_palette <- function(levs) {
+  real <- setdiff(levs, "Not recorded")
+  cols <- setNames(scales::brewer_pal(palette = "Set2")(8)[seq_along(real)], real)
+  if ("Not recorded" %in% levs) cols["Not recorded"] <- "#A7B2AC"
+  cols
+}
 
 r_strength <- function(r) {
   a <- abs(r)
@@ -119,7 +139,8 @@ ui <- page_sidebar(
     h6("GROUP COMPARISON", class = "section-label"),
     selectInput(
       "colour", "Colour points by",
-      choices = group_variables,
+      choices = list("Categories" = group_variables,
+                     "Continuous score (gradient)" = numeric_colour_vars),
       selected = "CDR"
     ),
     checkboxInput("group_lines", "Fit a separate line for each group", value = FALSE),
@@ -142,15 +163,19 @@ ui <- page_sidebar(
     ),
     
     layout_column_wrap(
-      width = 1/3,
+      width = 1/4,
       card(class = "metric-card", card_body(
         div(class = "metric-label", "PARTICIPANTS"),
         div(class = "metric-number", textOutput("n_selected", inline = TRUE)),
         div(class = "metric-caption", "Matching your filters"))),
       card(class = "metric-card", card_body(
-        div(class = "metric-label", "POINTS PLOTTED"),
+        div(class = "metric-label", "COMPLETE OBSERVATIONS (n)"),
         div(class = "metric-number", textOutput("n_plotted", inline = TRUE)),
-        div(class = "metric-caption", "With complete axis data"))),
+        div(class = "metric-caption", "Used for the correlation"))),
+      card(class = "metric-card", card_body(
+        div(class = "metric-label", "PEARSON'S r"),
+        div(class = "metric-number", textOutput("r_value", inline = TRUE)),
+        div(class = "metric-caption", textOutput("r_caption", inline = TRUE)))),
       card(class = "metric-card", card_body(
         div(class = "metric-label", "MEDIAN AGE"),
         div(class = "metric-number", textOutput("median_age", inline = TRUE)),
@@ -239,6 +264,7 @@ server <- function(input, output, session) {
     updateCheckboxInput(session, "group_lines", value = FALSE)
   })
   
+  is_numeric_colour <- reactive(input$colour %in% numeric_colour_vars)
   var_label <- function(v) names(variables)[match(v, variables)]
   
   filtered_data <- reactive({
@@ -259,9 +285,13 @@ server <- function(input, output, session) {
         "<br>Education: ", Educ, "<br>SES: ", SES, "<br>CDR: ", CDR,
         "<br>MMSE: ", MMSE, "<br>Brain volume (nWBV): ", nWBV))
     
-    g <- as.character(dat[[input$colour]])
-    g[is.na(g) | g == "Missing"] <- "Not recorded"
-    dat$Group <- g
+    if (is_numeric_colour()) {
+      dat$Group <- dat[[input$colour]]
+    } else {
+      g <- as.character(dat[[input$colour]])
+      g[is.na(g) | g == "Missing"] <- "Not recorded"
+      dat$Group <- factor(g, levels = order_levels(g))
+    }
     dat
   })
   
@@ -281,6 +311,16 @@ server <- function(input, output, session) {
   output$n_selected <- renderText(nrow(filtered_data()))
   output$n_plotted  <- renderText(nrow(plot_data()))
   
+  output$r_value <- renderText({
+    s <- stats()
+    if (is.null(s)) "N/A" else sprintf("%.2f", s$r)
+  })
+  
+  output$r_caption <- renderText({
+    s <- stats()
+    if (is.null(s)) "Too few observations" else r_strength(s$r)
+  })
+  
   output$median_age <- renderText({
     ages <- filtered_data()$Age
     if (length(ages) == 0 || all(is.na(ages))) return("N/A")
@@ -288,7 +328,7 @@ server <- function(input, output, session) {
   })
   
   output$group_badge <- renderUI({
-    nm <- names(group_variables)[match(input$colour, group_variables)]
+    nm <- names(all_colour_vars)[match(input$colour, all_colour_vars)]
     tags$span(class = "group-pill", paste("COLOURED BY", toupper(nm)))
   })
   
@@ -324,10 +364,15 @@ server <- function(input, output, session) {
                          colour = Group, text = Hover)) +
       geom_point(alpha = 0.78, size = 2.8)
     
-    p <- p + scale_colour_brewer(palette = "Set2", na.value = "#A7B2AC")
+    # Intentional colour: gradient only for numeric colouring
+    if (is_numeric_colour()) {
+      p <- p + scale_colour_gradient(low = "#D8693B", high = "#2F6FA8", na.value = "#A7B2AC")
+    } else {
+      p <- p + scale_colour_manual(values = make_palette(levels(dat$Group)), drop = FALSE)
+    }
     
-    # Separate line per group
-    if (input$group_lines) {
+    # Separate line per group (categorical colouring only)
+    if (input$group_lines && !is_numeric_colour()) {
       big <- names(which(table(dat$Group) >= 4))
       dat_g <- dat |> filter(Group %in% big)
       if (nrow(dat_g) > 0) {
@@ -352,7 +397,7 @@ server <- function(input, output, session) {
     
     p <- p +
       labs(x = var_label(input$xvar), y = var_label(input$yvar),
-           colour = names(group_variables)[match(input$colour, group_variables)]) +
+           colour = names(all_colour_vars)[match(input$colour, all_colour_vars)]) +
       theme_minimal(base_size = 12) +
       theme(
         plot.background = element_rect(fill = "#FFFFFF", colour = NA),
@@ -380,7 +425,7 @@ server <- function(input, output, session) {
   output$group_table <- renderTable({
     dat <- plot_data()
     x <- input$xvar; y <- input$yvar
-    out <- lapply(sort(unique(dat$Group)), function(g) {
+    out <- lapply(levels(dat$Group), function(g) {
       d <- dat[dat$Group == g, ]
       r <- safe_cor(d[[x]], d[[y]])
       data.frame(Group = g, n = nrow(d),
@@ -391,8 +436,17 @@ server <- function(input, output, session) {
   }, striped = TRUE, spacing = "s", align = "lrr")
   
   output$group_card <- renderUI({
-    nm <- names(group_variables)[match(input$colour, group_variables)]
+    nm <- names(all_colour_vars)[match(input$colour, all_colour_vars)]
     note <- group_notes[[input$colour]]
+    
+    if (is_numeric_colour()) {
+      return(card(class = "group-card", card_body(
+        h5(paste("Colouring by", nm)),
+        p(note),
+        p("Low scores are shown in warm colours and high scores in cool colours. ",
+          "Switch to a categorical grouping (such as CDR) to compare the relationship across groups.")
+      )))
+    }
     
     card(class = "group-card", card_body(
       h5(paste("Does the pattern differ by", tolower(nm), "?")),
@@ -411,7 +465,7 @@ server <- function(input, output, session) {
   
   output$description <- renderUI({
     x <- var_label(input$xvar); y <- var_label(input$yvar)
-    nm <- names(group_variables)[match(input$colour, group_variables)]
+    nm <- names(all_colour_vars)[match(input$colour, all_colour_vars)]
     p(paste0(
       "This plot compares ", tolower(y), " with ", tolower(x), ". Each dot is one participant, ",
       "coloured by ", tolower(nm), ". The demographic filters decide who is included, and Pearson's r, ",
