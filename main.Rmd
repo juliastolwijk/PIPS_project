@@ -1,31 +1,62 @@
 ---
 title: "Brain Volume Decline Across the Adult Lifespan"
 author: "Group Project"
-date: "`r Sys.Date()`"
+date: "⁠ r Sys.Date() ⁠"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+⁠ {r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 source("R/helpers_data.R")
-```
+ ⁠
 
 ## 1. Introduction & Dataset Overview
 
-This project investigates structural brain aging and cognitive decline using the **Open Access Series of Imaging Studies (OASIS)** cross-sectional dataset. We load the dataset and remove the 20 repeat scans to ensure statistical independence across observations.
+This project investigates structural brain aging and cognitive decline using the *Open Access Series of Imaging Studies (OASIS)* cross-sectional dataset. We load the dataset and remove the 20 repeat scans to ensure statistical independence across observations.
 
-```{r load-data}
+⁠ {r load-data}
 file_path <- resolve_data_file("data/oasis_cross-sectional-5708aa0a98d82080.xlsx")
 raw_data <- read_oasis_file(file_path)
 oasis_df <- prepare_oasis_data(raw_data, keep_first_scan_only = TRUE)
 cat("Total unique participants loaded:", nrow(oasis_df), "\n")
-```
+ ⁠
 
 ## 2. Interactive OASIS Data Explorer (Shiny Application)
 
 To explore bivariate relationships and test separate group regression slopes interactively, run the chunk below in RStudio:
 
-```{r shiny-app, eval=FALSE}
-source("src/r/app.R")
+⁠ {r shiny-app, eval=FALSE}
+source("add_shiny_app.R")
 run_oasis_app(exclude_repeats = TRUE)
-```
+ ⁠
+
+## 3. Statistical Analyses
+
+We address three research questions:
+
+•⁠  ⁠*RQ1:* Does normalized whole brain volume (nWBV) predict cognitive performance (MMSE) over and above age, education, socioeconomic status (SES) and sex? Hierarchical multiple regression with heteroscedasticity-robust (HC3) standard errors.
+•⁠  ⁠*RQ2:* Does nWBV differ across dementia severity groups (CDR 0, CDR 0.5, CDR ≥ 1)? Welch's one-way ANOVA with Games–Howell post hoc tests, a Kruskal–Wallis test as a robustness check, and an age- and sex-adjusted model.
+•⁠  ⁠*RQ3:* Does age moderate the association between nWBV and MMSE? Moderated multiple regression with mean-centered predictors, covariates and HC3 standard errors, followed by simple slopes at the 25th, 50th and 75th age percentiles.
+
+Assumptions (multicollinearity, heteroscedasticity, influential cases, equality of variances) are checked within each analysis. Running the chunk below performs all three analyses and prints the results and plots.
+
+⁠ {r statistical-analyses}
+source("statistical_analyses.R")
+ ⁠
+
+## 4. Results
+
+*RQ1 – Brain volume and cognition.* nWBV alone explained 23.1% of the variance in MMSE, F(1, 214) = 58.32, p < .001. Adding age did not improve the model (Δ*R*² = .004, p = .272), adding education and SES did (Δ*R*² = .056, p < .001), and adding sex did not (Δ*R*² = .000, p = .883). The final model explained 29.1% of the variance (adjusted R² = .274). nWBV remained a significant positive predictor: holding the covariates constant, a 0.01-unit higher nWBV was associated with a 0.39-point higher MMSE score (95% CI [0.24, 0.54], p < .001, β = .55). None of the covariates was individually significant, although education was borderline (p = .052).
+
+*RQ2 – Brain volume across dementia severity.* Mean nWBV differed strongly across CDR groups, Welch's F(2, 89.03) = 49.53, p < .001, η² = .26. Brain volume decreased step by step from no dementia (M = .769) to very mild dementia (M = .729) to mild/moderate dementia (M = .705), and all three pairwise Games–Howell comparisons were significant (all adjusted p ≤ .002). A Kruskal–Wallis test led to the same conclusion, and the group difference remained significant after adjusting for age and sex (robust F(2, 230) = 19.89, p < .001, partial η² = .18).
+
+*RQ3 – Age as a moderator.* The nWBV × age interaction was not significant (b = −0.0035, 95% CI [−0.0110, 0.0039], p = .351). Simple slopes were similar at ages 66 (b = 0.42), 73 (b = 0.40) and 81 (b = 0.37), all p < .001. There is therefore no evidence that the brain volume–cognition association changes with age, although this does not show that it is identical at all ages.
+
+*Summary.* Greater brain volume was consistently associated with better cognitive performance and lower dementia severity, and this association did not depend on age.
+
+## 5. Limitations
+
+•⁠  ⁠The data are cross-sectional and observational, so the results describe differences between people, not change within a person or causal effects of brain volume on cognition.
+•⁠  ⁠MMSE has a ceiling of 30, which may weaken associations among cognitively healthy participants.
+•⁠  ⁠The higher CDR groups are small (CDR ≥ 1 merged, n = 30), which limits the precision of those estimates.
+•⁠  ⁠Heteroscedasticity was present in the regression models; HC3 robust standard errors were used to account for it.
