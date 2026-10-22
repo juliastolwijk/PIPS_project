@@ -14,5 +14,5 @@ This project requires **R (version 4.2 or newer)** and **RStudio** is recommende
 
 Clone the repository to your local machine:
 ```bash
-git clone [https://github.com/](https://github.com/)<your-username>/<your-repo-name>.git
+git clone https://github.com/<your-username>/<your-repo-name>.git
 cd <your-repo-name>
