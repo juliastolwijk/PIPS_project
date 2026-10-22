@@ -1,5 +1,3 @@
-# OASIS Brain Aging & Dementia Explorer (`pips-oasis-project`)
-
 # OASIS Brain Aging & Dementia Explorer (pips-oasis-project)
 
 This repository contains an interactive R Shiny dashboard and statistical analysis pipeline investigating age-related brain volume decline and cognitive impairment across the adult lifespan. We created this project for the Programming in Psychological Science (PIPS) course within the Research Master in Psychology at the University of Amsterdam.
